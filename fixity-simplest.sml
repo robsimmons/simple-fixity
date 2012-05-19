@@ -50,6 +50,13 @@ struct
     | PREFIX of Precedence.t * tok * (result -> result)
     | INFIX of Precedence.t * lrn * tok * (result -> result -> result)
 
+   fun print_stack stack xs = 
+      case stack of 
+         Bot => String.concatWith " $ " ("Bot" :: xs)
+       | S $ DAT _ => print_stack S ("DAT" :: xs)
+       | S $ PREFIX _ => print_stack S ("PREFIX" :: xs)
+       | S $ INFIX _ => print_stack S ("INFIX" :: xs)
+
    
    (* Exception interface *)
 
@@ -145,9 +152,9 @@ struct
         | dispatch NON x [ (_, f, y) ] = f x y
         | dispatch NON x [] = raise Fail "Invariant: xs must be nonempty"
         | dispatch NON x ((tok1, _, _) :: (tok2, _, _) :: _) = 
-             raise ConsecutiveNonInfix (tok1, tok2)
+             raise MixedAssoc (tok1, NON, tok2, NON)
    in 
-    ( Assert.assert (fn () => valid_stack S)
+    ( Assert.assert 1 (fn () => valid_stack S)
     ; case S of 
          Bot $ DAT d => 
            ((* Finished: dispatch everything *)
@@ -161,7 +168,7 @@ struct
            ((* Infix: better be lower prec or the same associtivity *)
             if lt (PREC prec, running_prec) 
             then S $ INFIX (prec, lrn', tok, f) $ DAT (dispatch lrn d2 xs)
-            else if ( Assert.assert (fn () => eq (PREC prec, running_prec))
+            else if ( Assert.assert 2 (fn () => eq (PREC prec, running_prec))
                     ; lrn = lrn')
             then reduce_infix_at_precedence S (running_prec, lrn, tok) 
                     ((tok, f, d2) :: xs)
@@ -180,7 +187,7 @@ struct
     *   top_tok. *)         
 
    fun reduce_precedence S required = 
-    ( Assert.assert (fn () => valid_stack S)
+    ( Assert.assert 3 (fn () => valid_stack S)
     ; case S of 
          Bot $ d => S
        | S' $ PREFIX (prec, tok, f) $ DAT d => 
@@ -200,7 +207,7 @@ struct
    (* shift is called on an arbitrary valid stack and list of tokens *)
 
    fun shift S str = 
-    ( Assert.assert (fn () => valid_stack S)
+    ( Assert.assert 4 (fn () => valid_stack S)
     ; case Stream.front str of 
          Stream.Nil => raise Finished S
        | Stream.Cons (x as DAT d, str) =>
@@ -217,8 +224,9 @@ struct
     * more prefix operators. *)
 
    and must_shift (state as (S, top_prec, top_tok)) str = 
-    ( Assert.assert (fn () => valid_partial_stack S (top_prec))
-    ; Assert.assert 
+    ( (* print ("must_shift: " ^ print_stack S [] ^ "\n") *)
+    ; Assert.assert 5 (fn () => valid_partial_stack S (top_prec))
+    ; Assert.assert 6
         (fn () => isSome top_tok orelse eq (MIN, top_prec))
     ; case Stream.front str of
          Stream.Nil => raise Trailing (top_tok, state)
@@ -228,7 +236,7 @@ struct
        | Stream.Cons (x as PREFIX (prec, tok, f), xs) => 
             if leq (top_prec, PREC prec)
             then must_shift
-                    ((reduce_precedence S (PREC prec)) $ x, PREC prec, SOME tok)
+                    (S $ x, PREC prec, SOME tok)
                     xs
             else raise SomethingLowPrefix (valOf top_tok, tok))
 
@@ -294,16 +302,18 @@ struct
 
 
    fun resumePartial resolver (S, prec, tok) str = 
-    ( Assert.assert (fn () => valid_partial_stack S prec)
+    ( Assert.assert 7 (fn () => valid_partial_stack S prec)
     ; must_shift (S, prec, tok) (map_stream resolver tok str))
 
    fun resumeTotal resolver S str = 
-    ( Assert.assert (fn () => valid_stack S)
+    ( Assert.assert 8 (fn () => valid_stack S)
     ; shift S (map_stream resolver NONE str)) (* XXX BUG *)
 
    fun finalize resolver S = 
-    ( Assert.assert (fn () => valid_stack S)
-    ; raise Match)
+    ( Assert.assert 9 (fn () => valid_stack S)
+    ; case reduce_precedence S MIN of
+         Bot $ DAT d => d
+       | _ => raise Fail ("Did not reduce fully ["^print_stack S []^"]"))
  
    fun resolve resolver str = 
       must_shift (Bot, MIN, NONE) (map_stream resolver NONE str)
@@ -316,7 +326,10 @@ struct
       resolveStream resolver (Stream.fromList toks)
 end
 
-functor IntFixityFn (type tok type result) = 
+functor IntFixityFn (type tok type result):> 
+FIXITY where type precedence = int
+         and type tok = tok
+         and type result = result =
 struct
 structure X = SimplestFixityFn 
   (structure Precedence = IntOrdered 

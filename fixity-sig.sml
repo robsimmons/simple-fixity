@@ -17,13 +17,12 @@ sig
    type partial_state (* Needs more input to resolve fixity *)
    type total_state (* Has enough input to resolve fixity *)
 
-   exception Trailing of tok option* partial_state (* "2 + 4 +", "3 + ~" *)
-   exception Successive of tok option * tok        (* "", "2~+6", "3++6" *)
-   exception ConsecutiveNonInfix of tok * tok      (* "2 = 3 = 5" *)
-   exception MixedAssoc of tok * lrn * tok * lrn   (* "a <- b -> c" *)
-   exception PrefixEqualInfix of tok * tok         (* "~ 2 + 4", same prec. *) 
-   exception SomethingLowPrefix of tok * tok       (* "4 + sin 5 + 9" *)
-   exception Finished of total_state               (* "2 + 9 * 12" *)
+   exception Trailing of tok option * partial_state (* "2 + 4 +", "3 + ~" *)
+   exception Successive of tok option * tok         (* "", "2~+6", "3++6" *)
+   exception MixedAssoc of tok * lrn * tok * lrn    (* "a <- b -> c", "2=3=5" *)
+   exception PrefixEqualInfix of tok * tok          (* "~ 2 + 4", same prec. *) 
+   exception SomethingLowPrefix of tok * tok        (* "4 + sin 5 + 9" *)
+   exception Finished of total_state                (* "2 + 9 * 12" *)
 
    (* A resolver tells the fixity code how to work *)
    type resolver 
