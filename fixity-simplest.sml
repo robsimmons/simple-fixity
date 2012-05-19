@@ -224,8 +224,7 @@ struct
     * more prefix operators. *)
 
    and must_shift (state as (S, top_prec, top_tok)) str = 
-    ( (* print ("must_shift: " ^ print_stack S [] ^ "\n") *)
-    ; Assert.assert 5 (fn () => valid_partial_stack S (top_prec))
+    ( Assert.assert 5 (fn () => valid_partial_stack S (top_prec))
     ; Assert.assert 6
         (fn () => isSome top_tok orelse eq (MIN, top_prec))
     ; case Stream.front str of
@@ -268,8 +267,15 @@ struct
    (* Turn a stream of tokens into a stream of results, adding an applicaiton
     * between every two successive tokens. last_tok is NONE if the 
     * last token either didn't exist or was an infix/prefix token. *)
-   fun map_stream (resolver: resolver) last_tok str =
-      Stream.lazy
+   fun map_stream (resolver: resolver) (last_tok: tok option) str =
+   let 
+      fun app (last_tok, tok) = 
+      let val f = #adj resolver (last_tok, tok)
+      in INFIX (#adj_prec resolver (),
+                #adj_assoc resolver,
+                #adj_tok resolver (), f)
+      end
+   in Stream.lazy
       (fn () =>
          (case Stream.front str of 
              Stream.Nil => Stream.Nil
@@ -279,17 +285,16 @@ struct
                       Stream.Cons (DAT res,
                          map_stream resolver (SOME tok) str)
                  | (SOME last_tok, Sum.INL res) => 
-                   let val f = #adj resolver (last_tok, tok)
-                   in Stream.Cons (DAT res,
-                         Stream.eager (Stream.Cons
-                           (INFIX (#adj_prec resolver (),
-                                   #adj_assoc resolver,
-                                   #adj_tok resolver (), f),
+                      Stream.Cons (app (last_tok, tok),
+                         Stream.eager (Stream.Cons (DAT res,
                             map_stream resolver (SOME tok) str)))
-                   end
-                 | (_, Sum.INR (Prefix (prec, f))) =>
+                 | (NONE, Sum.INR (Prefix (prec, f))) =>
                       Stream.Cons (PREFIX (prec, tok, f), 
                          map_stream resolver NONE str)
+                 | (SOME last_tok, Sum.INR (Prefix (prec, f))) =>
+                      Stream.Cons (app (last_tok, tok),
+                         Stream.eager (Stream.Cons (PREFIX (prec, tok, f), 
+                            map_stream resolver (SOME tok) str)))
                  | (_, Sum.INR (Infix (prec, f))) =>
                       Stream.Cons (INFIX (prec, NON, tok, f), 
                          map_stream resolver NONE str)
@@ -299,6 +304,7 @@ struct
                  | (_, Sum.INR (Infixl (prec, f))) =>
                       Stream.Cons (INFIX (prec, LEFT, tok, f), 
                          map_stream resolver NONE str))))
+   end
 
 
    fun resumePartial resolver (S, prec, tok) str = 
