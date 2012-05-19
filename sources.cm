@@ -1,0 +1,10 @@
+library
+  signature FIXITY
+
+  functor SimplestFixityFn (* Precedence is an arbitrary ORDERED *)
+  functor IntFixityFn      (* Precedence is an int *)
+is
+  $SMACKAGE/cmlib/v1/cmlib.cm
+  assert.sml
+  fixity-sig.sml
+  fixity-simplest.sml
