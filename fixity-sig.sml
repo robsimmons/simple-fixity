@@ -1,7 +1,4 @@
-(* Signature of a fixity resolver that understands infix and prefix. 
- * 
- * 
- * *)
+(* Signature of a fixity resolver that understands infix and prefix. *)
 
 signature FIXITY = 
 sig
@@ -20,21 +17,29 @@ sig
    type partial_state (* Needs more input to resolve fixity *)
    type total_state (* Has enough input to resolve fixity *)
 
-   exception EmptyParse                            (* "" *)
-   exception Trailing of tok * partial_state       (* "2 + 4 +" or "3 + ~" *)
-   exception Successive of tok * tok               (* "2 ~ + 6", "3 + + 6" *)
+   exception Trailing of tok option* partial_state (* "2 + 4 +", "3 + ~" *)
+   exception Successive of tok option * tok        (* "", "2~+6", "3++6" *)
    exception ConsecutiveNonInfix of tok * tok      (* "2 = 3 = 5" *)
    exception MixedAssoc of tok * lrn * tok * lrn   (* "a <- b -> c" *)
    exception PrefixEqualInfix of tok * tok         (* "~ 2 + 4", same prec. *) 
    exception SomethingLowPrefix of tok * tok       (* "4 + sin 5 + 9" *)
    exception Finished of total_state               (* "2 + 9 * 12" *)
 
-   type resolver = 
-      {handle_token: tok -> (result, fixity) Sum.sum,
+   (* A resolver tells the fixity code how to work *)
+   type resolver 
+
+   val adj_resolver:
+      {token: tok -> (result, fixity) Sum.sum,
        adj_prec: precedence,
        adj_assoc: lrn,
        adj_tok: tok,
        adj: result -> result -> result}
+      -> resolver
+
+   val no_adj_resolver: 
+      {token: tok -> (result, fixity) Sum.sum,
+       adj: tok * tok -> exn}
+      -> resolver
 
    (* Completely resolve fixity *)
    val resolveStream: resolver -> tok Stream.stream -> result

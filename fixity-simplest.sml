@@ -54,11 +54,10 @@ struct
    (* Exception interface *)
 
    type total_state = item stack
-   type partial_state = item stack * Precedence.t * tok
+   type partial_state = item stack * opt_prec * tok option
 
-   exception EmptyParse
-   exception Trailing of tok * partial_state
-   exception Successive of tok * tok
+   exception Trailing of tok option * partial_state
+   exception Successive of tok option * tok 
    exception ConsecutiveNonInfix of tok * tok
    exception MixedAssoc of tok * lrn * tok * lrn
    exception PrefixEqualInfix of tok * tok
@@ -200,47 +199,121 @@ struct
 
    (* shift is called on an arbitrary valid stack and list of tokens *)
 
-   fun shift (app as (app_prec, _, _, _)) S str = 
+   fun shift S str = 
     ( Assert.assert (fn () => valid_stack S)
     ; case Stream.front str of 
          Stream.Nil => raise Finished S
        | Stream.Cons (x as DAT d, str) =>
-            shift app
-               (reduce_precedence S (PREC app_prec) $ INFIX app $ x) str
+            raise Fail "Input stream badly formed: adjacent DATs"
        | Stream.Cons (x as INFIX (prec, _, tok, _), str) =>
-            must_shift app
-               (reduce_precedence S (PREC prec) $ x, prec, tok) str
+            must_shift
+               (reduce_precedence S (PREC prec) $ x, PREC prec, SOME tok) str
        | Stream.Cons (x as PREFIX (prec, tok, _), xs) => 
-            must_shift app
-               (reduce_precedence S (PREC prec) $ x, prec, tok) str)
+            must_shift 
+               (reduce_precedence S (PREC prec) $ x, PREC prec, SOME tok) str)
 
    (* must_shift is called when the stack consists of a valid stack, followed
     * by either an infix or a prefix operator, followed by a series of one or 
     * more prefix operators. *)
 
-   and must_shift app (state as (S, top_prec, top_tok)) str = 
-    ( Assert.assert (fn () => valid_partial_stack S (PREC top_prec))
+   and must_shift (state as (S, top_prec, top_tok)) str = 
+    ( Assert.assert (fn () => valid_partial_stack S (top_prec))
+    ; Assert.assert 
+        (fn () => isSome top_tok orelse eq (MIN, top_prec))
     ; case Stream.front str of
          Stream.Nil => raise Trailing (top_tok, state)
-       | Stream.Cons (x as DAT d, xs) => shift app (S $ x) xs
+       | Stream.Cons (x as DAT d, xs) => shift (S $ x) xs
        | Stream.Cons (x as INFIX (_, _, tok, _), xs) => 
             raise Successive (top_tok, tok)
        | Stream.Cons (x as PREFIX (prec, tok, f), xs) => 
-            if leq (PREC top_prec, PREC prec)
-            then must_shift app
-                    ((reduce_precedence S (PREC prec)) $ x, prec, tok)
+            if leq (top_prec, PREC prec)
+            then must_shift
+                    ((reduce_precedence S (PREC prec)) $ x, PREC prec, SOME tok)
                     xs
-            else raise SomethingLowPrefix (top_tok, tok))
+            else raise SomethingLowPrefix (valOf top_tok, tok))
 
+
+   (* The resolver type and its introduction forms *)
+ 
    type resolver = 
       {handle_token: tok -> (result, fixity) Sum.sum,
-       adj_prec: precedence,
+       adj_prec: unit -> Precedence.t,
        adj_assoc: lrn,
-       adj_tok: tok,
-       adj: result -> result -> result}
+       adj_tok: unit -> tok,
+       adj: tok * tok -> result -> result -> result}
 
-   fun get_app (x: resolver) =
-      (#adj_prec x, #adj_assoc x, #adj_tok x, #adj x)
+   fun adj_resolver {token, adj_prec, adj_assoc, adj_tok, adj}: resolver = 
+      {handle_token = token,
+       adj_prec = fn () => adj_prec,
+       adj_assoc = adj_assoc,
+       adj_tok = fn () => adj_tok,
+       adj = fn _ => adj}
+
+   fun no_adj_resolver {token, adj}: resolver =
+      {handle_token = token,
+       adj_prec = fn () => raise Fail "Invariant: adjacency discovered late",
+       adj_assoc = LEFT,
+       adj_tok = fn () => raise Fail "Invariant: adjacency discovered late",
+       adj = fn (t1, t2) => raise (adj (t1, t2))}
+
+
+   (* Turn a stream of tokens into a stream of results, adding an applicaiton
+    * between every two successive tokens. last_tok is NONE if the 
+    * last token either didn't exist or was an infix/prefix token. *)
+   fun map_stream (resolver: resolver) last_tok str =
+      Stream.lazy
+      (fn () =>
+         (case Stream.front str of 
+             Stream.Nil => Stream.Nil
+           | Stream.Cons (tok, str) => 
+               (case (last_tok, #handle_token resolver tok) of
+                   (NONE, Sum.INL res) => 
+                      Stream.Cons (DAT res,
+                         map_stream resolver (SOME tok) str)
+                 | (SOME last_tok, Sum.INL res) => 
+                   let val f = #adj resolver (last_tok, tok)
+                   in Stream.Cons (DAT res,
+                         Stream.eager (Stream.Cons
+                           (INFIX (#adj_prec resolver (),
+                                   #adj_assoc resolver,
+                                   #adj_tok resolver (), f),
+                            map_stream resolver (SOME tok) str)))
+                   end
+                 | (_, Sum.INR (Prefix (prec, f))) =>
+                      Stream.Cons (PREFIX (prec, tok, f), 
+                         map_stream resolver NONE str)
+                 | (_, Sum.INR (Infix (prec, f))) =>
+                      Stream.Cons (INFIX (prec, NON, tok, f), 
+                         map_stream resolver NONE str)
+                 | (_, Sum.INR (Infixr (prec, f))) =>
+                      Stream.Cons (INFIX (prec, RIGHT, tok, f), 
+                         map_stream resolver NONE str)
+                 | (_, Sum.INR (Infixl (prec, f))) =>
+                      Stream.Cons (INFIX (prec, LEFT, tok, f), 
+                         map_stream resolver NONE str))))
+
+
+   fun resumePartial resolver (S, prec, tok) str = 
+    ( Assert.assert (fn () => valid_partial_stack S prec)
+    ; must_shift (S, prec, tok) (map_stream resolver tok str))
+
+   fun resumeTotal resolver S str = 
+    ( Assert.assert (fn () => valid_stack S)
+    ; shift S (map_stream resolver NONE str)) (* XXX BUG *)
+
+   fun finalize resolver S = 
+    ( Assert.assert (fn () => valid_stack S)
+    ; raise Match)
+ 
+   fun resolve resolver str = 
+      must_shift (Bot, MIN, NONE) (map_stream resolver NONE str)
+
+   fun resolveStream resolver str = 
+      resolve resolver str
+    handle Finished state => finalize resolver state
+
+   fun resolveList resolver toks = 
+      resolveStream resolver (Stream.fromList toks)
 end
 
 functor IntFixityFn (type tok type result) = 
