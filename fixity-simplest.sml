@@ -68,12 +68,6 @@ struct
    exception Wrong of tok option * tok
    exception Ambiguous of tok * lrn option * tok * lrn option
 
-(*
-   exception Trailing of tok option * partial_state
-   exception Successive of tok option * tok 
-   exception MixedAssoc of tok * lrn option * tok * lrn
-   exception Finished of total_state
-*)
 
    (* valid_stack checks for the well-formedness of a shift-reduce
     * parse stack.
