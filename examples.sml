@@ -7,7 +7,6 @@ structure Test =
 struct
 
    (* We can create a fixity resolver that takes strings to strings *)
-  
    structure FS = 
    IntFixityFn (type tok = string type result = string)
 
@@ -16,7 +15,6 @@ struct
 
 
    (* Or one that takes strings to integers *)
-
    structure FI =
    IntFixityFn (type tok = string type result = int)
 
@@ -33,7 +31,7 @@ struct
     * tightly than anything except for unary minus. *)
 
    val res_arith = 
-      FI.adj_resolver 
+      FI.AdjResolver 
          {adj = fn x => fn y => x * y,
           adj_prec = 4,
           adj_assoc = FI.RIGHT,
@@ -80,30 +78,38 @@ struct
    val () = expect_success "- 1 2 - 3 4" (~ 1 * 2 * ~ 3 * 4)
    val () = expect_error "x + y" (fn Option.Option => true | _ => false)
    val () = expect_error "" 
-      (fn FI.Trailing (NONE, _) => true | _ => false)
+      (fn FI.Incomplete (NONE, _) => true | _ => false)
    val () = expect_error "4 +" 
-      (fn FI.Trailing (SOME "+", _) => true | _ => false)
+      (fn FI.Incomplete (SOME "+", _) => true | _ => false)
    val () = expect_error "- 4 + - - -" 
-      (fn FI.Trailing (SOME "-", _) => true | _ => false)
+      (fn FI.Incomplete (SOME "-", _) => true | _ => false)
    val () = expect_success "4 + - 4" 0
    val () = expect_error "4 - + 4" 
-      (fn FI.Successive (SOME "-", "+") => true | _ => false)
+      (fn FI.Wrong (SOME "-", "+") => true | _ => false)
    val () = expect_error "+ 4" 
-      (fn FI.Successive (NONE, "+") => true | _ => false)
+      (fn FI.Wrong (NONE, "+") => true | _ => false)
 
    (* Equality is defined as non-fix, so '4 = 5 = 10' is an error. *)
    val () = expect_error "4 = 5 = 6" 
-      (fn FI.MixedAssoc ("=", SOME FI.NON, "=", FI.NON) => true | _ => false)
+      (fn FI.Ambiguous ("=", SOME FI.NON, "=", SOME FI.NON) => true 
+        | _ => false)
 
-   (* EXAMPLE 2: Degenerate fixity
+
+   (* EXAMPLE 2: Ambiguous parsing
     * 
-    * To discuss some of the more corner-case aspects of fixity
-    * resolution, we'll create a slightly more degenerate example. 
-    * This also demonstrates the no_adj_resolver constructor for
-    * resolvers. *)
+    * Example 1 had very little opportunity for ambiguous parsing:
+    * essentially, consecutive equalities like '4 = 5 = 10', which
+    * could be either '(4 = 5) = 10' or '4 = (5 = 10)', were it. 
+    *
+    * Ambiguity arises due to the NON fixity, prefix operators of
+    * different precedences that aren't all the highest precedence,
+    * and multiplie NON/LEFT/RIGHT fixities at the same precedence. So
+    * we'll do all those things wrong to demonstrate how ambiguity is
+    * handled. This also demonstrates the NoAdjResolver
+    * constructor. *)
 
    val res_pref = 
-      FS.no_adj_resolver 
+      FS.NoAdjResolver 
          {adj = fn _ => Domain,
           token = fn "!" => Sum.INR (FS.Prefix (1, fn s => "(!"^s^")")) 
                    | "?" => Sum.INR (FS.Prefix (1, fn s => "(?"^s^")"))
@@ -138,21 +144,25 @@ struct
 
    (* We're not handling adjecency, raising Domain if it occurs. *)
 
+   exception Amb = FS.Ambiguous
    val () = expect_error "~ y * x z" (fn Domain => true | _ => false)
+
+   (* The normal case of ambiguity is a fixity conflict *)
+
    val () = expect_success "a -> b -> c"   "(a->(b->c))"
    val () = expect_success "a <- b <- c"   "((a<-b)<-c)"
    val () = expect_error "a -> b <- c" 
-      (fn FS.MixedAssoc ("->",SOME FS.RIGHT,"<-",FS.LEFT) => true | _ => false)
+      (fn Amb ("->",SOME FS.RIGHT,"<-",SOME FS.LEFT) => true | _ => false)
    val () = expect_error "a <- b -> c" 
-      (fn FS.MixedAssoc ("<-",SOME FS.LEFT,"->",FS.RIGHT) => true | _ => false)
+      (fn Amb ("<-",SOME FS.LEFT,"->",SOME FS.RIGHT) => true | _ => false)
    val () = expect_error "a <-> b -> c" 
-      (fn FS.MixedAssoc ("<->",SOME FS.NON,"->",FS.RIGHT) => true | _ => false)
+      (fn Amb ("<->",SOME FS.NON,"->",SOME FS.RIGHT) => true | _ => false)
    val () = expect_error "a <-> b <- c" 
-      (fn FS.MixedAssoc ("<->",SOME FS.NON,"<-",FS.LEFT) => true | _ => false)
+      (fn Amb ("<->",SOME FS.NON,"<-",SOME FS.LEFT) => true | _ => false)
    val () = expect_error "a <- b <-> c" 
-      (fn FS.MixedAssoc ("<-",SOME FS.LEFT,"<->",FS.NON) => true | _ => false)
+      (fn Amb ("<-",SOME FS.LEFT,"<->",SOME FS.NON) => true | _ => false)
    val () = expect_error "a -> b <-> c" 
-      (fn FS.MixedAssoc ("->",SOME FS.RIGHT,"<->",FS.NON) => true | _ => false)
+      (fn Amb ("->",SOME FS.RIGHT,"<->",SOME FS.NON) => true | _ => false)
 
    (* Conservative treatment of infix operators
     * 
@@ -177,7 +187,7 @@ struct
 
    val () = expect_success "x * ~ y"       "(x*(~y))"
    val () = expect_error "~ y * x"
-      (fn FS.MixedAssoc ("~", NONE, "*", FS.NON) => true | _ => false)
+      (fn Amb ("~", NONE, "*", SOME FS.NON) => true | _ => false)
 
    (* A more ambiguous case is when a low-precedence prefix operator
     * follows a higher-precedence operator (either infix or
@@ -200,55 +210,13 @@ struct
  
    val () = expect_success "! ~ X ^ Y"     "(!((~X)^Y))"
    val () = expect_error "~ ! X ^ Y" 
-               (fn FS.Successive (SOME "~", "!") => true | _ => false)
+               (fn Amb ("~", NONE, "!", NONE) => true | _ => false)
    val () = expect_error "~ ! ~ X" 
-               (fn FS.Successive (SOME "~", "!") => true | _ => false)
+               (fn Amb ("~", NONE, "!", NONE) => true | _ => false)
    val () = expect_error "! ~ ! X" 
-               (fn FS.Successive (SOME "~", "!") => true | _ => false)
+               (fn Amb ("~", NONE, "!", NONE) => true | _ => false)
    val () = expect_error "X ^ ! Y" 
-               (fn FS.Successive (SOME "^", "!") => true | _ => false)
+               (fn Amb ("^", SOME FS.NON, "!", NONE) => true | _ => false)
                
-
-   val res = 
-      FS.no_adj_resolver 
-         {adj = fn _ => Match,
-          token = fn "!" => Sum.INR (FS.Prefix (1, fn s => "(!"^s^")")) 
-                   | "~" => Sum.INR (FS.Prefix (2, fn s => "(~"^s^")"))
-                   | x => Sum.INL x}
-
-(*
-   val () = expect_error (fn "!" => SOME (FS.Prefix 1, fn s => "(!"^s^")") 
-                           | "~" => SOME (FS.Prefix 2, fn s => "(~"^s^")") 
-      (fn () =>
-       let in
-         ( ()
-         ; false) 
-        handle FixityString.SomethingLowPrefix ("~", "!") => true
-             | _ => false 
-       end)
-      "'~ ! ~ foo', '!' has lower precedence (exception)"
-
-   val () = Testing.expect () 
-      (fn () =>
-       let in
-         ( ()
-         ; false) 
-        handle FixityString.SomethingLowPrefix ("!", "~") => true
-             | _ => false 
-       end)
-      "'~ ! ~ foo', where '~' has lower precedence (exception)"
-*)
-
    val () = Testing.report ()
-(* ### 
-The
-second problem is addressed by the fact that the implementation
-implements runtime checks that the parse stack is well-formed.
-
-
-Some parses that are technically non-ambiguous parses, are
-disallowed. One example is "~ ! ~ X" where ~ and ! are prefix
-operators of different precedence; this would lead to a the exception
-SomethingLowPrefix (~, !) if ! has lower precendence and the exception
-SomethingLowPrefix (!, ~) if ~ has lower precedence. *)
 end
