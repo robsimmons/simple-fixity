@@ -8,6 +8,9 @@ struct
 
    fun testS resolver s =
       FS.resolveList resolver (String.tokens Char.isSpace s)
+   fun testIgnS resolver s = 
+      FS.resolve resolver (Stream.fromList (String.tokens Char.isSpace s))
+    handle FS.Complete _ => false
 
 
    (* Or one that takes strings to integers *)
@@ -137,7 +140,7 @@ struct
 
    fun expect_error s hnd =
       Testing.expect ()
-        (fn () => let in (testS res_pref s; false) handle exn => hnd exn end)
+        (fn () => let in (testIgnS res_pref s) handle exn => hnd exn end)
         ("'"^s^"' (error expected)")
 
    (* We're not handling adjecency, raising Domain if it occurs. *)
@@ -158,20 +161,33 @@ struct
 
    val () = expect_success "a -> b -> c"   "(a->(b->c))"
    val () = expect_success "a <- b <- c"   "((a<-b)<-c)"
-   val () = expect_error "a -> b <- c" 
+   val () = expect_error "a -> b <- c ^ z" 
       (fn Amb ("->",SOME FS.RIGHT,"<-",SOME FS.LEFT) => true | _ => false)
-   val () = expect_error "a <- b -> c" 
+   val () = expect_error "a <- b -> c ^ z" 
       (fn Amb ("<-",SOME FS.LEFT,"->",SOME FS.RIGHT) => true | _ => false)
-   val () = expect_error "a <-> b -> c" 
+   val () = expect_error "a <-> b -> c ^ z" 
       (fn Amb ("<->",SOME FS.NON,"->",SOME FS.RIGHT) => true | _ => false)
-   val () = expect_error "a <-> b <- c" 
+   val () = expect_error "a <-> b <- c ^ z" 
       (fn Amb ("<->",SOME FS.NON,"<-",SOME FS.LEFT) => true | _ => false)
-   val () = expect_error "a <- b <-> c" 
+   val () = expect_error "a <- b <-> c ^ z" 
       (fn Amb ("<-",SOME FS.LEFT,"<->",SOME FS.NON) => true | _ => false)
+   val () = expect_error "a -> b <-> c ^ z" 
+      (fn Amb ("->",SOME FS.RIGHT,"<->",SOME FS.NON) => true | _ => false)
+
+   (* X
+    * 
+    * The "^ z" is to supposed to force reduction, which means that
+    * the ambiguity error will actually be revealed. We would like
+    * have the following generate an error, but the error is not
+    * actually generalized until we finalize. 
+  
    val () = expect_error "a -> b <-> c" 
       (fn Amb ("->",SOME FS.RIGHT,"<->",SOME FS.NON) => true | _ => false)
    val () = expect_error "a <-> b <-> c" 
-      (fn Amb ("<->",SOME FS.NON,"<->",SOME FS.NON) => true | _ => false)
+      (fn Amb ("<->",SOME FS.NON,"<->",SOME FS.NON) => true | _ => false) 
+
+    * It would be a reasonable thing to change to try and make this
+    * example raise an error (that is, before finalization). *)
 
    (* The fixity resolver allows for low-precedence prefix operators
     * to precede higher-fixity infix operators, thus the following
@@ -193,7 +209,7 @@ struct
     * raised, FS.Ambiguous (abbreviated to Amb), is the same. *)
 
    val () = expect_success "x * ~ y"       "(x*(~y))"
-   val () = expect_error "~ y * x"
+   val () = expect_error "~ y * x ^ z"
       (fn Amb ("~", NONE, "*", SOME FS.NON) => true | _ => false)
 
    (* A more ambiguous case is when a low-precedence prefix operator
@@ -281,9 +297,10 @@ struct
         ("'"^String.concatWith"/"ss^"' (expected '"^expected^"')")
 
    (* In expect_error, the stack is never finalized. This is for
-    * emphasis: the finalize function never raises an error, all
-    * errors are uncovered eagerly. We only test Incomplete errors,
-    * but this is true of all the other errors. *)
+    * emphasis: the finalize function rases only Ambiguous errors, and
+    * arguably it shouldn't even do that (see the commented-out "a <->
+    * b <-> c" error above for a discussion). The implementation
+    * tries to raise errors as early as possible, in other words. *)
 
    fun expect_error ss hnd =
       Testing.expect ()

@@ -45,10 +45,17 @@ struct
  
    datatype lrn = LEFT | RIGHT | NON
 
+   (* Stack items *)
    datatype item = 
       DAT of result
     | PREFIX of Precedence.t * tok * (result -> result)
     | INFIX of Precedence.t * lrn * tok * (result -> result -> result)
+
+   (* Input *)
+   datatype item' = 
+      DAT' of result * tok
+    | PREFIX' of Precedence.t * tok * (result -> result)
+    | INFIX' of Precedence.t * lrn * tok * (result -> result -> result)
 
    fun print_stack stack xs = 
       case stack of 
@@ -60,7 +67,7 @@ struct
    
    (* Exception interface *)
 
-   type total_state = item stack
+   type total_state = item stack * tok
    type partial_state = item stack * opt_prec * lrn option * tok option
 
    exception Complete of total_state
@@ -204,21 +211,21 @@ struct
 
    (* shift is called on an arbitrary valid stack and list of tokens *)
 
-   fun shift S str = 
+   fun shift S last_tok str = 
     ( Assert.assert 4 (fn () => valid_stack S)
     ; case Stream.front str of 
-         Stream.Nil => raise Complete S
-       | Stream.Cons (x as DAT d, str) =>
+         Stream.Nil => raise Complete (S, last_tok)
+       | Stream.Cons (DAT' (d, tok), str) =>
             raise Fail "Input stream badly formed: adjacent DATs"
-       | Stream.Cons (x as INFIX (prec, lrn, tok, _), str) =>
+       | Stream.Cons (INFIX' (prec, lrn, tok, f), str) =>
             must_shift
-               (reduce_precedence S (PREC prec) $ x, 
+               (reduce_precedence S (PREC prec) $ INFIX (prec, lrn, tok, f), 
                 PREC prec, 
                 SOME lrn, 
                 SOME tok) str
-       | Stream.Cons (x as PREFIX (prec, tok, _), xs) => 
+       | Stream.Cons (PREFIX' (prec, tok, f), xs) => 
             must_shift 
-               (reduce_precedence S (PREC prec) $ x, 
+               (reduce_precedence S (PREC prec) $ PREFIX (prec, tok, f), 
                 PREC prec, 
                 NONE,
                 SOME tok) str)
@@ -234,13 +241,13 @@ struct
         (fn () => isSome top_tok orelse eq (MIN, top_prec))
     ; case Stream.front str of
          Stream.Nil => raise Incomplete (top_tok, state)
-       | Stream.Cons (x as DAT d, xs) => shift (S $ x) xs
-       | Stream.Cons (x as INFIX (_, _, tok, _), xs) => 
+       | Stream.Cons (DAT' (d, tok), xs) => shift (S $ DAT d) tok xs
+       | Stream.Cons (INFIX' (_, _, tok, _), xs) => 
             raise Wrong (top_tok, tok)
-       | Stream.Cons (x as PREFIX (prec, tok, f), xs) => 
+       | Stream.Cons (PREFIX' (prec, tok, f), xs) => 
             if leq (top_prec, PREC prec)
             then must_shift
-                    (S $ x, PREC prec, NONE, SOME tok)
+                    (S $ PREFIX (prec, tok, f), PREC prec, NONE, SOME tok)
                     xs
             else raise Ambiguous (valOf top_tok, top_lrn, tok, NONE))
 
@@ -276,7 +283,7 @@ struct
    let 
       fun app (last_tok, tok) = 
       let val f = #adj resolver (last_tok, tok)
-      in INFIX (#adj_prec resolver (),
+      in INFIX' (#adj_prec resolver (),
                 #adj_assoc resolver,
                 #adj_tok resolver (), f)
       end
@@ -287,27 +294,27 @@ struct
            | Stream.Cons (tok, str) => 
                (case (last_tok, #handle_token resolver tok) of
                    (NONE, Sum.INL res) => 
-                      Stream.Cons (DAT res,
+                      Stream.Cons (DAT' (res, tok),
                          map_stream resolver (SOME tok) str)
                  | (SOME last_tok, Sum.INL res) => 
                       Stream.Cons (app (last_tok, tok),
-                         Stream.eager (Stream.Cons (DAT res,
+                         Stream.eager (Stream.Cons (DAT' (res, tok),
                             map_stream resolver (SOME tok) str)))
                  | (NONE, Sum.INR (Prefix (prec, f))) =>
-                      Stream.Cons (PREFIX (prec, tok, f), 
+                      Stream.Cons (PREFIX' (prec, tok, f), 
                          map_stream resolver NONE str)
                  | (SOME last_tok, Sum.INR (Prefix (prec, f))) =>
                       Stream.Cons (app (last_tok, tok),
-                         Stream.eager (Stream.Cons (PREFIX (prec, tok, f), 
+                         Stream.eager (Stream.Cons (PREFIX' (prec, tok, f), 
                             map_stream resolver NONE str)))
                  | (_, Sum.INR (Infix (prec, f))) =>
-                      Stream.Cons (INFIX (prec, NON, tok, f), 
+                      Stream.Cons (INFIX' (prec, NON, tok, f), 
                          map_stream resolver NONE str)
                  | (_, Sum.INR (Infixr (prec, f))) =>
-                      Stream.Cons (INFIX (prec, RIGHT, tok, f), 
+                      Stream.Cons (INFIX' (prec, RIGHT, tok, f), 
                          map_stream resolver NONE str)
                  | (_, Sum.INR (Infixl (prec, f))) =>
-                      Stream.Cons (INFIX (prec, LEFT, tok, f), 
+                      Stream.Cons (INFIX' (prec, LEFT, tok, f), 
                          map_stream resolver NONE str))))
    end
 
@@ -321,11 +328,11 @@ struct
           * (SOME _) and the next input is not an infix/prefix operator,
           * then map_stream assumes an infix application is needed. *))
 
-   fun resumeTotal resolver S str = 
+   fun resumeTotal resolver (S, tok) str = 
     ( Assert.assert 8 (fn () => valid_stack S)
-    ; shift S (map_stream resolver NONE str)) (* XXX BUG *)
+    ; shift S tok (map_stream resolver (SOME tok) str)) (* XXX BUG *)
 
-   fun finalize S = 
+   fun finalize (S, _) = 
     ( Assert.assert 9 (fn () => valid_stack S)
     ; case reduce_precedence S MIN of
          Bot $ DAT d => d
