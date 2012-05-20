@@ -1,8 +1,3 @@
-CM.make "$SMACKAGE/cmlib/v1/cmlib.cm";
-CM.make "sources.cm";
-use "../cmlib/tests/testing.sig";
-use "../cmlib/tests/testing.sml";
-
 structure Test = 
 struct
 

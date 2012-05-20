@@ -1,0 +1,11 @@
+$(SMACKAGE)/cmlib/v1/cmlib.mlb
+
+local
+   assert.sml
+   fixity-sig.sml
+   fixity-simplest.sml
+in
+   signature FIXITY
+   functor SimplestFixityFn
+   functor IntFixityFn
+end

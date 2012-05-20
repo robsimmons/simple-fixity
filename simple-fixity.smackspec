@@ -1,0 +1,12 @@
+description: Simple fixity resolution
+maintainer: Robert J. Simmons
+keywords: parsing, fixity
+requires: cmlib v1 (v1.2.0)
+
+platform: smlnj
+   test: sml -m tests/test.cm
+
+platform: mlton
+   test: mlton test.mlb
+   test: ./test
+   test: rm ./test
