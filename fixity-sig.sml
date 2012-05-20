@@ -109,7 +109,7 @@ sig
     * 
     * "a * sin + y" ~~> Ambiguous ("*", NONE, "sin", NONE)
     *                   Why: Same reason, prec("sin") < prec("+")
-    *                   < prec("*"). Note that the second argument
+    *                   < prec("*"). Note that the first argument
     *                   is NONE and not SOME RIGHT. *)
    exception Ambiguous of tok * lrn option * tok * lrn option
 
