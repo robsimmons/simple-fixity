@@ -1,6 +1,5 @@
 library
   signature FIXITY
-
   functor SimplestFixityFn (* Precedence is an arbitrary ORDERED *)
   functor IntFixityFn      (* Precedence is an int *)
 is

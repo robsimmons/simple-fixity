@@ -63,10 +63,17 @@ struct
    type total_state = item stack
    type partial_state = item stack * opt_prec * tok option
 
+   exception Complete of total_state
+   exception Incomplete of tok option * partial_state 
+   exception Wrong of tok option * tok
+   exception Ambiguous of tok * lrn option * tok * lrn option
+
+(*
    exception Trailing of tok option * partial_state
    exception Successive of tok option * tok 
    exception MixedAssoc of tok * lrn option * tok * lrn
    exception Finished of total_state
+*)
 
    (* valid_stack checks for the well-formedness of a shift-reduce
     * parse stack.
@@ -149,7 +156,7 @@ struct
         | dispatch NON x [ (_, f, y) ] = f x y
         | dispatch NON x [] = raise Fail "Invariant: xs must be nonempty"
         | dispatch NON x ((tok1, _, _) :: (tok2, _, _) :: _) = 
-             raise MixedAssoc (tok1, SOME NON, tok2, NON)
+             raise Ambiguous (tok1, SOME NON, tok2, SOME NON)
    in 
     ( Assert.assert 1 (fn () => valid_stack S)
     ; case S of 
@@ -160,7 +167,7 @@ struct
            ((* Prefix: better be lower prec *)
             if lt (PREC prec, running_prec) 
             then S $ PREFIX (prec, tok, f) $ DAT (dispatch lrn d xs)
-            else raise MixedAssoc (tok, NONE, last_tok, lrn))
+            else raise Ambiguous (tok, NONE, last_tok, SOME lrn))
        | S $ INFIX (prec, lrn', tok, f) $ DAT d2 =>
            ((* Infix: better be lower prec or the same associtivity *)
             if lt (PREC prec, running_prec) 
@@ -169,7 +176,7 @@ struct
                     ; lrn = lrn')
             then reduce_infix_at_precedence S (running_prec, lrn, tok) 
                     ((tok, f, d2) :: xs)
-            else raise MixedAssoc (tok, SOME lrn', last_tok, lrn))
+            else raise Ambiguous (tok, SOME lrn', last_tok, SOME lrn))
        | _ => raise Fail "Impossible? (Should be precluded by assertion)")
    end
 
@@ -206,7 +213,7 @@ struct
    fun shift S str = 
     ( Assert.assert 4 (fn () => valid_stack S)
     ; case Stream.front str of 
-         Stream.Nil => raise Finished S
+         Stream.Nil => raise Complete S
        | Stream.Cons (x as DAT d, str) =>
             raise Fail "Input stream badly formed: adjacent DATs"
        | Stream.Cons (x as INFIX (prec, _, tok, _), str) =>
@@ -226,16 +233,16 @@ struct
     ; Assert.assert 6
         (fn () => isSome top_tok orelse eq (MIN, top_prec))
     ; case Stream.front str of
-         Stream.Nil => raise Trailing (top_tok, state)
+         Stream.Nil => raise Incomplete (top_tok, state)
        | Stream.Cons (x as DAT d, xs) => shift (S $ x) xs
        | Stream.Cons (x as INFIX (_, _, tok, _), xs) => 
-            raise Successive (top_tok, tok)
+            raise Wrong (top_tok, tok)
        | Stream.Cons (x as PREFIX (prec, tok, f), xs) => 
             if leq (top_prec, PREC prec)
             then must_shift
                     (S $ x, PREC prec, SOME tok)
                     xs
-            else raise Successive (top_tok, tok))
+            else raise Wrong (top_tok, tok))
 
 
    (* The resolver type and its introduction forms *)
@@ -247,14 +254,14 @@ struct
        adj_tok: unit -> tok,
        adj: tok * tok -> result -> result -> result}
 
-   fun adj_resolver {token, adj_prec, adj_assoc, adj_tok, adj}: resolver = 
+   fun AdjResolver {token, adj_prec, adj_assoc, adj_tok, adj}: resolver = 
       {handle_token = token,
        adj_prec = fn () => adj_prec,
        adj_assoc = adj_assoc,
        adj_tok = fn () => adj_tok,
        adj = fn _ => adj}
 
-   fun no_adj_resolver {token, adj}: resolver =
+   fun NoAdjResolver {token, adj}: resolver =
       {handle_token = token,
        adj_prec = fn () => raise Fail "Invariant: adjacency discovered late",
        adj_assoc = LEFT,
@@ -324,7 +331,7 @@ struct
 
    fun resolveStream resolver str = 
       resolve resolver str
-    handle Finished state => finalize resolver state
+    handle Complete state => finalize resolver state
 
    fun resolveList resolver toks = 
       resolveStream resolver (Stream.fromList toks)
