@@ -210,13 +210,18 @@ struct
  
    val () = expect_success "! ~ X ^ Y"     "(!((~X)^Y))"
    val () = expect_error "~ ! X ^ Y" 
-               (fn Amb ("~", NONE, "!", NONE) => true | _ => false)
+      (fn Amb ("~", NONE, "!", NONE) => true | _ => false)
    val () = expect_error "~ ! ~ X" 
-               (fn Amb ("~", NONE, "!", NONE) => true | _ => false)
+      (fn Amb ("~", NONE, "!", NONE) => true | _ => false)
    val () = expect_error "! ~ ! X" 
-               (fn Amb ("~", NONE, "!", NONE) => true | _ => false)
+      (fn Amb ("~", NONE, "!", NONE) => true | _ => false)
+
+   (* Note: for this form of ambiguity, NONE/NONE is returned even 
+    * when the higher-precedence operator is an infix operator that
+    * does have fixity. This is a weird corner case, though, and it could
+    * be made to go the other way if it mattered. *)
    val () = expect_error "X ^ ! Y" 
-               (fn Amb ("^", SOME FS.NON, "!", NONE) => true | _ => false)
+      (fn Amb ("^", NONE, "!", NONE) => true | _ => false)
                
    val () = Testing.report ()
 end

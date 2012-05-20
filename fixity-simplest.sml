@@ -242,7 +242,7 @@ struct
             then must_shift
                     (S $ x, PREC prec, SOME tok)
                     xs
-            else raise Wrong (top_tok, tok))
+            else raise Ambiguous (valOf top_tok, NONE, tok, NONE))
 
 
    (* The resolver type and its introduction forms *)
