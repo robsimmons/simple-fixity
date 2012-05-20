@@ -66,12 +66,26 @@ struct
    val () = expect_success "- 4 + - 3 / - 1 + - 9" (~10)
    val () = expect_success "4 + - 3 / - 1 + 9" 16
    val () = expect_success "- 3 + - 2 = - - - 15 / - - 3" 1 
+   val () = expect_success "1 2 3 4 5" (1 * 2 * 3 * 4 * 5)
+   val () = expect_success "1 + 2 3 4 5" (1 + 2 * 3 * 4 * 5)
+   val () = expect_success "1 2 + 3 4 5" (1 * 2 + 3 * 4 * 5)
+   val () = expect_success "1 2 3 + 4 5" (1 * 2 * 3 + 4 * 5)
+   val () = expect_success "1 2 3 4 + 5" (1 * 2 * 3 * 4 + 5)
+   val () = expect_success "1 + 2 + 3 + - 4 + 5" (1 + 2 + 3 + ~ 4 + 5)
+   val () = expect_success "1 2 + 3 + - 4 + 5" (1 * 2 + 3 + ~ 4 + 5)
+   val () = expect_success "1 + 2 3 + - 4 + 5" (1 + 2 * 3 + ~ 4 + 5)
+   val () = expect_success "1 + 2 + 3 - 4 + 5" (1 + 2 + 3 * ~ 4 + 5)
+   val () = expect_success "1 + 2 + 3 + - 4 5" (1 + 2 + 3 + ~ 4 * 5)
+   val () = expect_success "1 2 3 - 4" (1 * 2 * 3 * ~ 4)
+   val () = expect_success "- 1 2 - 3 4" (~ 1 * 2 * ~ 3 * 4)
    val () = expect_error "x + y" (fn Option.Option => true | _ => false)
-   val () = expect_error "" (fn FI.Trailing (NONE, _) => true | _ => false)
+   val () = expect_error "" 
+      (fn FI.Trailing (NONE, _) => true | _ => false)
    val () = expect_error "4 +" 
       (fn FI.Trailing (SOME "+", _) => true | _ => false)
    val () = expect_error "- 4 + - - -" 
       (fn FI.Trailing (SOME "-", _) => true | _ => false)
+   val () = expect_success "4 + - 4" 0
    val () = expect_error "4 - + 4" 
       (fn FI.Successive (SOME "-", "+") => true | _ => false)
    val () = expect_error "+ 4" 
@@ -79,7 +93,7 @@ struct
 
    (* Equality is defined as non-fix, so '4 = 5 = 10' is an error. *)
    val () = expect_error "4 = 5 = 6" 
-      (fn FI.MixedAssoc ("=", FI.NON, "=", FI.NON) => true | _ => false)
+      (fn FI.MixedAssoc ("=", SOME FI.NON, "=", FI.NON) => true | _ => false)
 
    (* EXAMPLE 2: Degenerate fixity
     * 
@@ -104,6 +118,8 @@ struct
                    | "*" => Sum.INR (FS.Infix 
                                         (3, fn x => fn y => "("^x^"*"^y^")"))
 
+                   | "<->" => Sum.INR (FS.Infix
+                                        (3, fn x => fn y => "("^x^"<-"^y^")"))
                    | "<-" => Sum.INR (FS.Infixl
                                         (3, fn x => fn y => "("^x^"<-"^y^")"))
                    | "->" => Sum.INR (FS.Infixr
@@ -126,9 +142,17 @@ struct
    val () = expect_success "a -> b -> c"   "(a->(b->c))"
    val () = expect_success "a <- b <- c"   "((a<-b)<-c)"
    val () = expect_error "a -> b <- c" 
-      (fn FS.MixedAssoc ("->",FS.RIGHT,"<-",FS.LEFT) => true | _ => false)
+      (fn FS.MixedAssoc ("->",SOME FS.RIGHT,"<-",FS.LEFT) => true | _ => false)
    val () = expect_error "a <- b -> c" 
-      (fn FS.MixedAssoc ("<-",FS.LEFT,"->",FS.RIGHT) => true | _ => false)
+      (fn FS.MixedAssoc ("<-",SOME FS.LEFT,"->",FS.RIGHT) => true | _ => false)
+   val () = expect_error "a <-> b -> c" 
+      (fn FS.MixedAssoc ("<->",SOME FS.NON,"->",FS.RIGHT) => true | _ => false)
+   val () = expect_error "a <-> b <- c" 
+      (fn FS.MixedAssoc ("<->",SOME FS.NON,"<-",FS.LEFT) => true | _ => false)
+   val () = expect_error "a <- b <-> c" 
+      (fn FS.MixedAssoc ("<-",SOME FS.LEFT,"<->",FS.NON) => true | _ => false)
+   val () = expect_error "a -> b <-> c" 
+      (fn FS.MixedAssoc ("->",SOME FS.RIGHT,"<->",FS.NON) => true | _ => false)
 
    (* Conservative treatment of infix operators
     * 
@@ -146,11 +170,14 @@ struct
     * both the parse '((~x)*y)' and '(~(x*y))' have a valid claim to
     * being the legitimate parse, and so the latter case raises an
     * exception. Really, it probably isn't a good idea to have prefix
-    * and infix operators at the same precedence anyway. *)
+    * and infix operators at the same precedence anyway, just as it
+    * probably isn't a good idea to have different-associating 
+    * infix operators at the same precedence. The error, MixedAssoc,
+    * is the same. *)
 
    val () = expect_success "x * ~ y"       "(x*(~y))"
    val () = expect_error "~ y * x"
-               (fn FS.PrefixEqualInfix ("~", "*") => true | _ => false)
+      (fn FS.MixedAssoc ("~", NONE, "*", FS.NON) => true | _ => false)
 
    (* A more ambiguous case is when a low-precedence prefix operator
     * follows a higher-precedence operator (either infix or
@@ -173,13 +200,13 @@ struct
  
    val () = expect_success "! ~ X ^ Y"     "(!((~X)^Y))"
    val () = expect_error "~ ! X ^ Y" 
-               (fn FS.SomethingLowPrefix ("~", "!") => true | _ => false)
+               (fn FS.Successive (SOME "~", "!") => true | _ => false)
    val () = expect_error "~ ! ~ X" 
-               (fn FS.SomethingLowPrefix ("~", "!") => true | _ => false)
+               (fn FS.Successive (SOME "~", "!") => true | _ => false)
    val () = expect_error "! ~ ! X" 
-               (fn FS.SomethingLowPrefix ("~", "!") => true | _ => false)
+               (fn FS.Successive (SOME "~", "!") => true | _ => false)
    val () = expect_error "X ^ ! Y" 
-               (fn FS.SomethingLowPrefix ("^", "!") => true | _ => false)
+               (fn FS.Successive (SOME "^", "!") => true | _ => false)
                
 
    val res = 

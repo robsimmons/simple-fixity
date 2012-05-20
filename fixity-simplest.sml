@@ -65,10 +65,7 @@ struct
 
    exception Trailing of tok option * partial_state
    exception Successive of tok option * tok 
-   exception ConsecutiveNonInfix of tok * tok
-   exception MixedAssoc of tok * lrn * tok * lrn
-   exception PrefixEqualInfix of tok * tok
-   exception SomethingLowPrefix of tok * tok
+   exception MixedAssoc of tok * lrn option * tok * lrn
    exception Finished of total_state
 
    (* valid_stack checks for the well-formedness of a shift-reduce
@@ -152,7 +149,7 @@ struct
         | dispatch NON x [ (_, f, y) ] = f x y
         | dispatch NON x [] = raise Fail "Invariant: xs must be nonempty"
         | dispatch NON x ((tok1, _, _) :: (tok2, _, _) :: _) = 
-             raise MixedAssoc (tok1, NON, tok2, NON)
+             raise MixedAssoc (tok1, SOME NON, tok2, NON)
    in 
     ( Assert.assert 1 (fn () => valid_stack S)
     ; case S of 
@@ -163,7 +160,7 @@ struct
            ((* Prefix: better be lower prec *)
             if lt (PREC prec, running_prec) 
             then S $ PREFIX (prec, tok, f) $ DAT (dispatch lrn d xs)
-            else raise PrefixEqualInfix (tok, last_tok))
+            else raise MixedAssoc (tok, NONE, last_tok, lrn))
        | S $ INFIX (prec, lrn', tok, f) $ DAT d2 =>
            ((* Infix: better be lower prec or the same associtivity *)
             if lt (PREC prec, running_prec) 
@@ -172,7 +169,7 @@ struct
                     ; lrn = lrn')
             then reduce_infix_at_precedence S (running_prec, lrn, tok) 
                     ((tok, f, d2) :: xs)
-            else raise MixedAssoc (tok, lrn', last_tok, lrn))
+            else raise MixedAssoc (tok, SOME lrn', last_tok, lrn))
        | _ => raise Fail "Impossible? (Should be precluded by assertion)")
    end
 
@@ -224,7 +221,8 @@ struct
     * more prefix operators. *)
 
    and must_shift (state as (S, top_prec, top_tok)) str = 
-    ( Assert.assert 5 (fn () => valid_partial_stack S (top_prec))
+    ((* print ("must_shift: "^print_stack S []^"\n"); *)
+      Assert.assert 5 (fn () => valid_partial_stack S (top_prec))
     ; Assert.assert 6
         (fn () => isSome top_tok orelse eq (MIN, top_prec))
     ; case Stream.front str of
@@ -237,7 +235,7 @@ struct
             then must_shift
                     (S $ x, PREC prec, SOME tok)
                     xs
-            else raise SomethingLowPrefix (valOf top_tok, tok))
+            else raise Successive (top_tok, tok))
 
 
    (* The resolver type and its introduction forms *)
@@ -294,7 +292,7 @@ struct
                  | (SOME last_tok, Sum.INR (Prefix (prec, f))) =>
                       Stream.Cons (app (last_tok, tok),
                          Stream.eager (Stream.Cons (PREFIX (prec, tok, f), 
-                            map_stream resolver (SOME tok) str)))
+                            map_stream resolver NONE str)))
                  | (_, Sum.INR (Infix (prec, f))) =>
                       Stream.Cons (INFIX (prec, NON, tok, f), 
                          map_stream resolver NONE str)

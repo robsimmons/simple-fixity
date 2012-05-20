@@ -2,27 +2,19 @@
 
 signature FIXITY = 
 sig
-   type precedence
-   type tok
-   type result
+   type tok (* Input *)
+   type result (* Output *)
 
+   
+   (* DESCRIBING FIXITY RESOLVERS *)
+
+   type precedence
    datatype lrn = NON | LEFT | RIGHT
    datatype fixity = 
       Prefix of precedence * (result -> result)
     | Infix of precedence * (result -> result -> result)
     | Infixl of precedence * (result -> result -> result)
     | Infixr of precedence * (result -> result -> result)
-
-   (* Internal state of the parser (allows for resumption) *)
-   type partial_state (* Needs more input to resolve fixity *)
-   type total_state (* Has enough input to resolve fixity *)
-
-   exception Trailing of tok option * partial_state (* "2 + 4 +", "3 + ~" *)
-   exception Successive of tok option * tok         (* "", "2~+6", "3++6" *)
-   exception MixedAssoc of tok * lrn * tok * lrn    (* "a <- b -> c", "2=3=5" *)
-   exception PrefixEqualInfix of tok * tok          (* "~ 2 + 4", same prec. *) 
-   exception SomethingLowPrefix of tok * tok        (* "4 + sin 5 + 9" *)
-   exception Finished of total_state                (* "2 + 9 * 12" *)
 
    (* A resolver tells the fixity code how to work *)
    type resolver 
@@ -40,13 +32,41 @@ sig
        adj: tok * tok -> exn}
       -> resolver
 
+
+   (* EXECUTING FIXITY RESOLVERS *)
+
    (* Completely resolve fixity *)
    val resolveStream: resolver -> tok Stream.stream -> result
    val resolveList: resolver -> tok list -> result
 
    (* Resolve fixity as much as possible, but anticipate more input *)
+
+   type partial_state (* Needs more input to resolve fixity *)
+   type total_state (* Has enough input to resolve fixity *)
+
    val resolve: resolver -> tok Stream.stream -> 'a
    val resumeTotal: resolver -> total_state -> tok Stream.stream -> 'a
    val resumePartial: resolver -> partial_state -> tok Stream.stream -> 'a
    val finalize: resolver -> total_state -> result
+
+
+   (* EXCEPTIONS *)
+
+   (* Trailing infix or prefix (NONE for empty input): "2+4+", "3+~" *)
+   (* Recoverable if more input is available *)
+   exception Trailing of tok option * partial_state (* "2+4+", "3+~" *)
+ 
+   (* Successive infix (NONE for leading infix): "+2", "2~+6", "3++6"
+    * Also used for the corner case of a too-low-precedence prefix 
+    * operator, like "~ sin 5" where sin is lower precedence than ~. *)
+   exception Successive of tok option * tok         
+
+   (* Associativities do not match at the same precedence (NONE for prefix): *)
+   (* SOME: "a <- b -> c", "2=3=5", same precedence *)
+   (* NONE: "~ 2 + 4", same precedence *)
+   (* However: "4 + ~ 2", same precedence, is treated as unambiguous *)
+   exception MixedAssoc of tok * lrn option * tok * lrn    
+
+   (* End of input reached successfully (allows resumption) *)
+   exception Finished of total_state
 end
