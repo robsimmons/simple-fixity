@@ -46,7 +46,7 @@ sig
    val resolve: resolver -> tok Stream.stream -> 'a
    val resumeTotal: resolver -> total_state -> tok Stream.stream -> 'a
    val resumePartial: resolver -> partial_state -> tok Stream.stream -> 'a
-   val finalize: resolver -> total_state -> result
+   val finalize: total_state -> result
 
 
    (* OUTCOMES *)

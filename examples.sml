@@ -92,9 +92,7 @@ struct
 
 
 
-
-
-   (* EXAMPLE 3: Ambiguous parsing
+   (* EXAMPLE 2: Ambiguous parsing
     * 
     * Example 1 had very little opportunity for ambiguous parsing:
     * essentially, consecutive equalities like '4 = 5 = 10', which
@@ -107,9 +105,10 @@ struct
     * handled. This also demonstrates the NoAdjResolver
     * constructor. *)
 
+   exception Adjacent of string * string
    val res_pref = 
       FS.NoAdjResolver 
-         {adj = fn _ => Domain,
+         {adj = fn (t1, t2) => Adjacent (t1, t2),
           token = fn "!" => Sum.INR (FS.Prefix (1, fn s => "(!"^s^")")) 
                    | "?" => Sum.INR (FS.Prefix (1, fn s => "(?"^s^")"))
                    | "=" => Sum.INR (FS.Infix 
@@ -144,7 +143,8 @@ struct
    (* We're not handling adjecency, raising Domain if it occurs. *)
 
    exception Amb = FS.Ambiguous
-   val () = expect_error "~ y * x z" (fn Domain => true | _ => false)
+   val () = expect_error "~ y * x z" 
+      (fn Adjacent ("x", "z") => true | _ => false)
 
    (* The normal case of where ambiguity occurs is a fixity
     * conflict. 
@@ -225,5 +225,113 @@ struct
    val () = expect_error "X ^ ! Y" 
       (fn Amb ("^", SOME FS.NON, "!", NONE) => true | _ => false)
                
+
+
+   
+   (* EXAMPLE 3: Incremental parsing 
+    * 
+    * I tried to prevent this implementation from being weirdly
+    * general, but I did make it so that it would support incremental
+    * input: taking one input line at a time from the user, and
+    * raising errors as soon as they arise. *)
+
+   fun testN ss =
+   let 
+      fun tokenize s = Stream.fromList (String.tokens Char.isSpace s)
+
+      fun dispatch (Sum.INL total_state) s = 
+             FS.resumeTotal res_pref total_state (tokenize s)
+        | dispatch (Sum.INR partial_state) s = 
+             FS.resumePartial res_pref partial_state (tokenize s)
+   
+      fun loop state ss = 
+         case ss of 
+            [] => raise Fail "Invariant ???"
+          | [ s ] => 
+            let in
+               dispatch state s
+             handle FS.Complete total_state => total_state
+            end
+          | s :: ss =>
+            let in
+               dispatch state s
+             handle FS.Complete st => loop (Sum.INL st) ss
+                  | FS.Incomplete (_, st) => loop (Sum.INR st) ss
+            end
+   in 
+      case ss of 
+         [] => raise Fail "Invariant ???"
+       | [ s ] => 
+         let in
+            FS.resolve res_pref (tokenize s)
+          handle FS.Complete st => st
+         end
+       | s :: ss => 
+         let in
+            FS.resolve res_pref (tokenize s)
+          handle FS.Complete st => loop (Sum.INL st) ss
+               | FS.Incomplete (_, st) => loop (Sum.INR st) ss
+         end
+   end
+
+   fun expect_success ss expected = 
+      Testing.expect ()
+        (fn () => let in (FS.finalize (testN ss) = expected) 
+                   handle exn => false end)
+        ("'"^String.concatWith"/"ss^"' (expected '"^expected^"')")
+
+   (* In expect_error, the stack is never finalized. This is for
+    * emphasis: the finalize function never raises an error, all
+    * errors are uncovered eagerly. We only test Incomplete errors,
+    * but this is true of all the other errors. *)
+
+   fun expect_error ss hnd =
+      Testing.expect ()
+        (fn () => let in (testN ss; false) 
+                   handle exn => hnd exn end)
+        ("'"^String.concatWith"/"ss^"' (error expected)")
+
+   val () = expect_error ["12","y"] 
+      (fn Adjacent ("12", "y") => true | _ => false)
+   val () = expect_error ["","12","y"] 
+      (fn Adjacent ("12", "y") => true | _ => false)
+   val () = expect_error ["","12","","","y"] 
+      (fn Adjacent ("12", "y") => true | _ => false)
+
+   val () = expect_success ["~ 12 ^","9"] "((~12)^9)"
+   val () = expect_success ["","~ 12 ^","9"] "((~12)^9)"
+   val () = expect_success ["~ 12","^","9"] "((~12)^9)"
+   val () = expect_success ["~","12 ^","9"] "((~12)^9)"
+   val () = expect_success ["","~ 12 ^","9"] "((~12)^9)"
+   val () = expect_success ["","~","12 ^","9"] "((~12)^9)"
+   val () = expect_success ["","~ 12","^","9"] "((~12)^9)"
+   val () = expect_success ["~","12","^","9"] "((~12)^9)"
+   val () = expect_success ["","~","12","^","9"] "((~12)^9)"
+   val () = expect_success ["","~","","12","","^","9"] "((~12)^9)"
+
+   val () = expect_error ["~ 12 ^"]
+      (fn FS.Incomplete (SOME "^", _) => true | _ => false)
+   val () = expect_error ["","~ 12 ^"]
+      (fn FS.Incomplete (SOME "^", _) => true | _ => false)
+   val () = expect_error ["~ 12","^"]
+      (fn FS.Incomplete (SOME "^", _) => true | _ => false)
+   val () = expect_error ["~","12 ^"]
+      (fn FS.Incomplete (SOME "^", _) => true | _ => false)
+   val () = expect_error ["","~ 12 ^"]
+      (fn FS.Incomplete (SOME "^", _) => true | _ => false)
+   val () = expect_error ["","~","12 ^"]
+      (fn FS.Incomplete (SOME "^", _) => true | _ => false)
+   val () = expect_error ["","~ 12","^"]
+      (fn FS.Incomplete (SOME "^", _) => true | _ => false)
+   val () = expect_error ["~","12","^"]
+      (fn FS.Incomplete (SOME "^", _) => true | _ => false)
+   val () = expect_error ["","~","12","^"]
+      (fn FS.Incomplete (SOME "^", _) => true | _ => false)
+   val () = expect_error ["","~","","12","","^"]
+      (fn FS.Incomplete (SOME "^", _) => true | _ => false)
+
+
+
+
    val () = Testing.report ()
 end

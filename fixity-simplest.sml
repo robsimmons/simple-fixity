@@ -314,13 +314,18 @@ struct
 
    fun resumePartial resolver (S, prec, lrn, tok) str = 
     ( Assert.assert 7 (fn () => valid_partial_stack S prec)
-    ; must_shift (S, prec, lrn, tok) (map_stream resolver tok str))
+    ; must_shift (S, prec, lrn, tok) 
+         (map_stream resolver NONE str)
+         (* Why NONE instead of tok? Because partial states only arise
+          * if the last token is an infix operator, and if last_tok is 
+          * (SOME _) and the next input is not an infix/prefix operator,
+          * then map_stream assumes an infix application is needed. *))
 
    fun resumeTotal resolver S str = 
     ( Assert.assert 8 (fn () => valid_stack S)
     ; shift S (map_stream resolver NONE str)) (* XXX BUG *)
 
-   fun finalize resolver S = 
+   fun finalize S = 
     ( Assert.assert 9 (fn () => valid_stack S)
     ; case reduce_precedence S MIN of
          Bot $ DAT d => d
@@ -331,7 +336,7 @@ struct
 
    fun resolveStream resolver str = 
       resolve resolver str
-    handle Complete state => finalize resolver state
+    handle Complete state => finalize state
 
    fun resolveList resolver toks = 
       resolveStream resolver (Stream.fromList toks)
