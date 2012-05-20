@@ -61,7 +61,7 @@ struct
    (* Exception interface *)
 
    type total_state = item stack
-   type partial_state = item stack * opt_prec * tok option
+   type partial_state = item stack * opt_prec * lrn option * tok option
 
    exception Complete of total_state
    exception Incomplete of tok option * partial_state 
@@ -210,18 +210,24 @@ struct
          Stream.Nil => raise Complete S
        | Stream.Cons (x as DAT d, str) =>
             raise Fail "Input stream badly formed: adjacent DATs"
-       | Stream.Cons (x as INFIX (prec, _, tok, _), str) =>
+       | Stream.Cons (x as INFIX (prec, lrn, tok, _), str) =>
             must_shift
-               (reduce_precedence S (PREC prec) $ x, PREC prec, SOME tok) str
+               (reduce_precedence S (PREC prec) $ x, 
+                PREC prec, 
+                SOME lrn, 
+                SOME tok) str
        | Stream.Cons (x as PREFIX (prec, tok, _), xs) => 
             must_shift 
-               (reduce_precedence S (PREC prec) $ x, PREC prec, SOME tok) str)
+               (reduce_precedence S (PREC prec) $ x, 
+                PREC prec, 
+                NONE,
+                SOME tok) str)
 
    (* must_shift is called when the stack consists of a valid stack, followed
     * by either an infix or a prefix operator, followed by a series of one or 
     * more prefix operators. *)
 
-   and must_shift (state as (S, top_prec, top_tok)) str = 
+   and must_shift (state as (S, top_prec, top_lrn, top_tok)) str = 
     ((* print ("must_shift: "^print_stack S []^"\n"); *)
       Assert.assert 5 (fn () => valid_partial_stack S (top_prec))
     ; Assert.assert 6
@@ -234,9 +240,9 @@ struct
        | Stream.Cons (x as PREFIX (prec, tok, f), xs) => 
             if leq (top_prec, PREC prec)
             then must_shift
-                    (S $ x, PREC prec, SOME tok)
+                    (S $ x, PREC prec, NONE, SOME tok)
                     xs
-            else raise Ambiguous (valOf top_tok, NONE, tok, NONE))
+            else raise Ambiguous (valOf top_tok, top_lrn, tok, NONE))
 
 
    (* The resolver type and its introduction forms *)
@@ -306,9 +312,9 @@ struct
    end
 
 
-   fun resumePartial resolver (S, prec, tok) str = 
+   fun resumePartial resolver (S, prec, lrn, tok) str = 
     ( Assert.assert 7 (fn () => valid_partial_stack S prec)
-    ; must_shift (S, prec, tok) (map_stream resolver tok str))
+    ; must_shift (S, prec, lrn, tok) (map_stream resolver tok str))
 
    fun resumeTotal resolver S str = 
     ( Assert.assert 8 (fn () => valid_stack S)
@@ -321,7 +327,7 @@ struct
        | _ => raise Fail ("Did not reduce fully ["^print_stack S []^"]"))
  
    fun resolve resolver str = 
-      must_shift (Bot, MIN, NONE) (map_stream resolver NONE str)
+      must_shift (Bot, MIN, NONE, NONE) (map_stream resolver NONE str)
 
    fun resolveStream resolver str = 
       resolve resolver str

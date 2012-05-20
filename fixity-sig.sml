@@ -107,10 +107,14 @@ sig
     *                   unambiguous parses like "~ sin x", as they
     *                   have potential ambiguity.) 
     * 
-    * "a * sin + y" ~~> Ambiguous ("*", NONE, "sin", NONE)
+    * "a * sin y"   ~~> Ambiguous ("*", SOME LEFT, "sin", NONE)
     *                   Why: Same reason, prec("sin") < prec("+")
     *                   < prec("*"). Note that the first argument
-    *                   is NONE and not SOME RIGHT. *)
+    *                   is NONE and not SOME RIGHT, and that the
+    *                   error is raised even though this parse is
+    *                   not actually ambiguous ("a * sin y + z" 
+    *                   would be). *)
+
    exception Ambiguous of tok * lrn option * tok * lrn option
 
 end

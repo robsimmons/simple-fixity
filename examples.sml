@@ -91,7 +91,10 @@ struct
         | _ => false)
 
 
-   (* EXAMPLE 2: Ambiguous parsing
+
+
+
+   (* EXAMPLE 3: Ambiguous parsing
     * 
     * Example 1 had very little opportunity for ambiguous parsing:
     * essentially, consecutive equalities like '4 = 5 = 10', which
@@ -143,7 +146,15 @@ struct
    exception Amb = FS.Ambiguous
    val () = expect_error "~ y * x z" (fn Domain => true | _ => false)
 
-   (* The normal case of ambiguity is a fixity conflict *)
+   (* The normal case of where ambiguity occurs is a fixity
+    * conflict. 
+    * 
+    * I used to think of "Nonfix" as being
+    * not-allowed-to-be-either-left-or-right-associative, but by
+    * declaring two successive nonfix operators to be ambiguous, we
+    * take the opposite view: that Infix is just unspecified
+    * left-or-right, so that "a <-> b <-> c" can parse as either "a
+    * <-> (b <-> c)" or "(a <-> b) <-> c". *)
 
    val () = expect_success "a -> b -> c"   "(a->(b->c))"
    val () = expect_success "a <- b <- c"   "((a<-b)<-c)"
@@ -159,10 +170,10 @@ struct
       (fn Amb ("<-",SOME FS.LEFT,"<->",SOME FS.NON) => true | _ => false)
    val () = expect_error "a -> b <-> c" 
       (fn Amb ("->",SOME FS.RIGHT,"<->",SOME FS.NON) => true | _ => false)
+   val () = expect_error "a <-> b <-> c" 
+      (fn Amb ("<->",SOME FS.NON,"<->",SOME FS.NON) => true | _ => false)
 
-   (* Conservative treatment of infix operators
-    * 
-    * The fixity resolver allows for low-precedence prefix operators
+   (* The fixity resolver allows for low-precedence prefix operators
     * to precede higher-fixity infix operators, thus the following
     * parse unambiguously: *)
 
@@ -177,9 +188,9 @@ struct
     * being the legitimate parse, and so the latter case raises an
     * exception. Really, it probably isn't a good idea to have prefix
     * and infix operators at the same precedence anyway, just as it
-    * probably isn't a good idea to have different-associating 
-    * infix operators at the same precedence. The error, MixedAssoc,
-    * is the same. *)
+    * probably isn't a good idea to have different-associating infix
+    * operators at the same precedence. The exception that gets
+    * raised, FS.Ambiguous (abbreviated to Amb), is the same. *)
 
    val () = expect_success "x * ~ y"       "(x*(~y))"
    val () = expect_error "~ y * x"
@@ -211,13 +222,8 @@ struct
       (fn Amb ("~", NONE, "!", NONE) => true | _ => false)
    val () = expect_error "! ~ ! X" 
       (fn Amb ("~", NONE, "!", NONE) => true | _ => false)
-
-   (* Note: for this form of ambiguity, NONE/NONE is returned even 
-    * when the higher-precedence operator is an infix operator that
-    * does have fixity. This is a weird corner case, though, and it could
-    * be made to go the other way if it mattered. *)
    val () = expect_error "X ^ ! Y" 
-      (fn Amb ("^", NONE, "!", NONE) => true | _ => false)
+      (fn Amb ("^", SOME FS.NON, "!", NONE) => true | _ => false)
                
    val () = Testing.report ()
 end
