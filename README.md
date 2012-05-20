@@ -25,6 +25,7 @@ If you use Fix.resolveStream or Fix.resolveList, one of three things will
 happen. 
 
 1. raise Fix.Trailing (tok_opt, partial_state) 
+
    Either there was no input (tok_opt = NONE) or there was a trailing
    infix operator (tok_opt = SOME tok). This would be recoverable if
    there was more input!
