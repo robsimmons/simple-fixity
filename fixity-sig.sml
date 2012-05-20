@@ -87,33 +87,32 @@ sig
     * resolved, even though there is some correct way to parse.
     *
     * "a <- b -> c" ~~> Ambiguous ("<-", SOME LEFT, "->", SOME RIGHT) 
-    *                   Why: "->" and "<-" have identical fixity, 
+    *                   Why: "->" and "<-" have identical fixity,
     *                   could be "(a <- b) -> c" or "a <- (b -> c)".
     *
     * "~ 2 + 4"     ~~> Ambiguous ("~", NONE, "+", SOME RIGHT)
     *                   Why: "~" and "+" have identical precedence,
-    *                   could be "(~ 2) + 4" or "~ (2 + 4)".
-    *                   (Note that, even if "~" and "+" have 
-    *                   identical precedence, "2 + ~ 4" is 
-    *                   unambiguous)
+    *                   could be "(~ 2) + 4" or "~ (2 + 4)".  (Note
+    *                   that, even if "~" and "+" have identical
+    *                   precedence, "2 + ~ 4" is unambiguous)
     *
     * "~ sin x + y" ~~> Ambiguous ("~", NONE, "+", NONE)
-    *                   Why: "~" has higher precedence than "sin",
-    *                   "+" has intermediate precedence, could be
-    *                   "(~ (sin x)) + y" if we resolve based on
-    *                   "~"'s high precedence or "~ (sin (x + y))"
-    *                   if we resolve based on "sin"'s low precedence. 
-    *                   (Note: this will be an error even for 
-    *                   unambiguous parses like "~ sin x", as they
-    *                   have potential ambiguity.) 
+    *                   Why: "~" has higher precedence than "sin", "+"
+    *                   has intermediate precedence, could be "(~ (sin
+    *                   x)) + y" if we resolve based on "~"'s high
+    *                   precedence or "~ (sin (x + y))" if we resolve
+    *                   based on "sin"'s low precedence.  (Note: this
+    *                   will be an error even for unambiguous parses
+    *                   like "~ sin x", as they have potential
+    *                   ambiguity.)
     * 
     * "a * sin y"   ~~> Ambiguous ("*", SOME LEFT, "sin", NONE)
-    *                   Why: Same reason, prec("sin") < prec("+")
-    *                   < prec("*"). Note that the first argument
-    *                   is NONE and not SOME RIGHT, and that the
-    *                   error is raised even though this parse is
-    *                   not actually ambiguous ("a * sin y + z" 
-    *                   would be). *)
+    *                   Why: Same reason as above, assuming
+    *                   prec("sin") < prec("+") < prec("*"). Note that
+    *                   the first argument is NONE and not SOME RIGHT,
+    *                   and that the error is raised even though this
+    *                   parse is not actually ambiguous ("a * sin y +
+    *                   z" would be). *)
 
    exception Ambiguous of tok * lrn option * tok * lrn option
 
