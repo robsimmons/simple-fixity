@@ -104,6 +104,6 @@ More documentation is given in the [FIXITY signature][5]
 
 [1]: https://github.com/robsimmons/simple-fixity/blob/master/assert.sml
 [2]: https://github.com/robsimmons/simple-fixity/blob/master/examples.sml
-[3]: https://github.com/robsimmons/simple-fixity/blob/master/examples.sml#L10-25
+[3]: https://github.com/robsimmons/simple-fixity/blob/master/examples.sml#L5-21
 [4]: https://github.com/standardml/cmlib/blob/master/ordered.sig
 [5]: https://github.com/robsimmons/simple-fixity/blob/master/fixity-sig.sml
