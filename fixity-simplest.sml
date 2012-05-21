@@ -330,7 +330,10 @@ struct
 
    fun resumeTotal resolver (S, tok) str = 
     ( Assert.assert 8 (fn () => valid_stack S)
-    ; shift S tok (map_stream resolver (SOME tok) str)) (* XXX BUG *)
+    ; shift S tok 
+         (map_stream resolver (SOME tok) str)
+         (* We need to save and pass on the last token so that the
+          * implicit infix applications will behave correctly. *)) 
 
    fun finalize (S, _) = 
     ( Assert.assert 9 (fn () => valid_stack S)
