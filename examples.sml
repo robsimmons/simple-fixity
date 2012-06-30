@@ -126,7 +126,7 @@ struct
                                         (3, fn x => fn y => "("^x^"*"^y^")"))
 
                    | "<->" => Sum.INR (FS.Infix
-                                        (3, fn x => fn y => "("^x^"<-"^y^")"))
+                                        (3, fn x => fn y => "("^x^"<->"^y^")"))
                    | "<-" => Sum.INR (FS.Infixl
                                         (3, fn x => fn y => "("^x^"<-"^y^")"))
                    | "->" => Sum.INR (FS.Infixr
@@ -174,12 +174,10 @@ struct
    val () = expect_error "a -> b <-> c ^ z" 
       (fn Amb ("->",SOME FS.RIGHT,"<->",SOME FS.NON) => true | _ => false)
 
-   (* X
-    * 
-    * The "^ z" is to supposed to force reduction, which means that
-    * the ambiguity error will actually be revealed. We would like
-    * have the following generate an error, but the error is not
-    * actually generalized until we finalize. 
+   (* The "^ z" suffix above is to supposed to force reduction, which
+    * means that the ambiguity error will actually be revealed. We
+    * would like have the following generate an error, but the error
+    * is not actually generalized until we finalize.
   
    val () = expect_error "a -> b <-> c" 
       (fn Amb ("->",SOME FS.RIGHT,"<->",SOME FS.NON) => true | _ => false)
